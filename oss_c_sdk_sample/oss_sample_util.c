@@ -54,6 +54,7 @@ void init_sample_config(oss_config_t *config, int is_cname)
     aos_str_set(&config->endpoint, OSS_ENDPOINT);
     aos_str_set(&config->access_key_id, ACCESS_KEY_ID);
     aos_str_set(&config->access_key_secret, ACCESS_KEY_SECRET);
+    aos_str_set(&config->io_host, IO_HOST);
     config->is_cname = is_cname;
 }
 

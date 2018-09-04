@@ -12,6 +12,7 @@ extern const char BUCKET_NAME[];
 extern const char OBJECT_NAME[];
 extern const char DIR_NAME[];
 extern const char MULTIPART_UPLOAD_FILE_PATH[];
+extern const char IO_HOST[];
 
 OSS_CPP_END
 

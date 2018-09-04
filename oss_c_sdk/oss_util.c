@@ -4,6 +4,7 @@
 #include "aos_status.h"
 #include "oss_auth.h"
 #include "oss_util.h"
+#include "kodo_http.h"
 
 #ifndef WIN32
 #include<sys/socket.h>
@@ -12,6 +13,8 @@
 #endif
 
 static char *default_content_type = "application/octet-stream";
+
+static char *pHexTable = "0123456789abcdef";
 
 static oss_content_type_t file_type[] = {
     {"html", "text/html"},
@@ -815,6 +818,112 @@ void oss_init_object_request(const oss_request_options_t *options,
     }
 
     oss_get_object_uri(options, bucket, object, *req);
+}
+
+void kodo_Encode_Bucket_To_HexString(const aos_string_t *bucket, char *pcEncString)
+{
+    int i = 0;
+    int length = bucket->len;
+    char cByte;
+    for (i = 0; i < length; i++)
+    {
+        cByte = bucket->data[i];
+        pcEncString[i*2] = pHexTable[cByte>>4];
+        pcEncString[i*2+1] = pHexTable[cByte&0x0f];
+    }
+
+    return;
+}
+
+char *KODO_RS_GetHostPrefix(const aos_string_t *pIoHost)
+{
+    if (pIoHost->len < strlen("https://"))   //pIoHost must be http://xxx or https://xxx, so len should  not be smaller than https://
+    {
+        return "";
+    }
+
+    if (strncmp(pIoHost->data, "https://", strlen("https://")) == 0)
+    {
+        return "https://";
+    }
+    else if (strncmp(pIoHost->data, "http://", strlen("http://")) == 0)
+    {
+        return "http://";
+    }
+
+    return "";
+}
+
+char *KODO_RS_GetPolicy_MakeRequest(const oss_request_options_t *options,  const aos_string_t *object, const char *domain) {
+    int expires;
+    time_t deadline;
+    char e[11];
+    char *authstr;
+    char *token;
+    char *request;
+    char *baseUrl;
+    char *hostPrefix;
+    Qiniu_Mac mac;
+
+    expires = 3600; // 1 hour
+    time(&deadline);
+    deadline += expires;
+    sprintf(e, "%u", (unsigned int) deadline);
+
+    hostPrefix = KODO_RS_GetHostPrefix(&options->config->io_host);
+    baseUrl = Qiniu_String_Concat(hostPrefix, domain, "/", object->data);
+    authstr = Qiniu_String_Concat3(baseUrl, "?e=", e);
+
+    mac.accessKey = options->config->access_key_id.data;
+    mac.secretKey = options->config->access_key_secret.data;
+    token = Qiniu_Mac_Sign(&mac, authstr);
+
+    request = apr_psprintf(options->pool, "%s/%s%s%s%s%s",
+                           options->config->io_host.data,
+                           object->data, "?e=", e, "&token=", token);
+
+    Qiniu_Free(baseUrl);
+    Qiniu_Free(token);
+    Qiniu_Free(authstr);
+
+    return request;
+}
+
+
+void kodo_init_object_request(const oss_request_options_t *options,
+                             const aos_string_t *bucket,
+                             const aos_string_t *object,
+                             http_method_e method,
+                             aos_http_request_t **req,
+                             aos_table_t *params,
+                             aos_table_t *headers,
+                             oss_progress_callback cb,
+                             uint64_t init_crc,
+                             aos_http_response_t **resp)
+{
+    oss_init_request(options, method, req, params, headers, resp);
+    (*resp)->progress_callback = cb;
+
+    char *domain;
+
+    oss_get_object_uri(options, bucket, object, *req);
+
+    char *pcEncString = (char *)malloc(2 * bucket->len);
+    if (NULL == pcEncString) {
+        printf("Not enough memory, malloc fail.\r\n");
+        return;
+    }
+
+    kodo_Encode_Bucket_To_HexString(bucket, pcEncString);
+    domain = apr_psprintf(options->pool, "%.*s-%.*s.%s",
+                          2 * bucket->len, pcEncString,
+                          options->config->access_key_id.len, options->config->access_key_id.data,
+                          "z0.src.qbox.me");
+    free(pcEncString);
+
+    (*req)->signed_url = KODO_RS_GetPolicy_MakeRequest(options, object, domain);
+
+    apr_table_addn((*req)->headers, "host", domain);
 }
 
 void oss_init_live_channel_request(const oss_request_options_t *options, 

@@ -239,7 +239,7 @@ aos_status_t *oss_do_get_object_to_file(const oss_request_options_t *options,
 
     oss_get_temporary_file_name(options->pool, filename, &tmp_filename);
 
-    oss_init_object_request(options, bucket, object, HTTP_GET, 
+    kodo_init_object_request(options, bucket, object, HTTP_GET,
                             &req, params, headers, progress_callback, 0, &resp);
 
     s = aos_status_create(options->pool);
